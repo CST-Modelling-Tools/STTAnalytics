@@ -19,8 +19,9 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 # Source files
 set(SOURCES
     main.cpp
-    src/EnergyAggregator.cpp
     src/ParametersFileReader.cpp
+    src/Photon.cpp
+    src/PhotonProcessor.cpp
     src/SurfaceMap.cpp
 )
 

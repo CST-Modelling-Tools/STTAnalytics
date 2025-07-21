@@ -12,12 +12,12 @@ class EnergyAggregator
 public:
     EnergyAggregator(const SurfaceMap& surfaceMap, double powerPerPhoton);
 
-    void processPhoton(const Photon& photon); // <-- Streaming interface
+    void processPhoton(const Photon& photon);
 
     double getEnergy(const std::string& heliostat, const std::string& receiver) const;
     const std::map<std::pair<std::string, std::string>, double>& getEnergyMap() const;
 
-    void printRanking() const;
+    void writeCSV(const std::string& outputPath) const;
 
 private:
     const SurfaceMap& m_surfaceMap;

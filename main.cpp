@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <string>
+#include <filesystem>
 
 int main(int argc, char* argv[])
 {
@@ -19,18 +20,25 @@ int main(int argc, char* argv[])
 
     try
     {
+        std::cout << "Reading parameters...\n";
         ParametersFileReader paramReader(folderPath);
         paramReader.read();
 
         double powerPerPhoton = paramReader.getPowerPerPhoton();
         SurfaceMap surfaceMap(paramReader.getSurfaceMap());
         EnergyAggregator aggregator(surfaceMap, powerPerPhoton);
-
         PhotonProcessor processor(aggregator);
+
+        std::cout << "Streaming photon data...\n";
         BinaryPhotonReader photonReader(folderPath);
         photonReader.streamPhotons(processor);
 
-        aggregator.printRanking();
+        std::cout << "Finished processing " << processor.getTotalCount() << " photons.\n";
+
+        std::string csvPath = (std::filesystem::path(folderPath) / "energy_report.csv").string();
+        aggregator.writeCSV(csvPath);
+
+        std::cout << "Results written to " << csvPath << "\n";
     }
     catch (const std::exception& ex)
     {

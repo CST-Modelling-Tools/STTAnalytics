@@ -1,8 +1,7 @@
 #include "EnergyAggregator.h"
-#include <iostream>
+#include <fstream>
 #include <iomanip>
-#include <algorithm>
-#include <vector>
+#include <stdexcept>
 
 EnergyAggregator::EnergyAggregator(const SurfaceMap& surfaceMap, double powerPerPhoton)
     : m_surfaceMap(surfaceMap), m_powerPerPhoton(powerPerPhoton)
@@ -34,27 +33,17 @@ const std::map<std::pair<std::string, std::string>, double>& EnergyAggregator::g
     return m_energyMap;
 }
 
-void EnergyAggregator::printRanking() const
+void EnergyAggregator::writeCSV(const std::string& outputPath) const
 {
-    std::vector<std::tuple<std::string, std::string, double>> ranking;
+    std::ofstream outFile(outputPath);
+    if (!outFile)
+        throw std::runtime_error("Cannot write CSV file: " + outputPath);
+
+    outFile << "Heliostat,Receiver,Energy_W\n";
     for (const auto& [key, energy] : m_energyMap)
     {
-        ranking.emplace_back(key.first, key.second, energy);
+        outFile << key.first << "," << key.second << "," << std::fixed << std::setprecision(6) << energy << "\n";
     }
 
-    std::sort(ranking.begin(), ranking.end(),
-              [](const auto& a, const auto& b) {
-                  return std::get<2>(a) > std::get<2>(b);
-              });
-
-    std::cout << std::fixed << std::setprecision(6);
-    std::cout << "Heliostat   Receiver   Energy Sent [W]\n";
-    std::cout << "---------------------------------------\n";
-
-    for (const auto& [heliostat, receiver, energy] : ranking)
-    {
-        std::cout << std::setw(10) << heliostat << "   "
-                  << std::setw(9) << receiver << "   "
-                  << std::setw(12) << energy << '\n';
-    }
+    outFile.close();
 }

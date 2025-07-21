@@ -1,44 +1,20 @@
 #include "SurfaceMap.h"
-#include <regex>
-#include <stdexcept>
+#include <sstream>
 
-SurfaceMap::SurfaceMap(const std::unordered_map<uint64_t, std::string>& surfaceIdToPath)
-    : m_surfaceIdToPath(surfaceIdToPath)
+SurfaceMap::SurfaceMap(const std::unordered_map<uint64_t, std::string>& surfaceData)
+    : m_surfacePaths(surfaceData)
 {
-    extractNames();
-}
-
-void SurfaceMap::extractNames()
-{
-    for (const auto& [id, path] : m_surfaceIdToPath)
+    for (const auto& [id, path] : surfaceData)
     {
-        if (path.find("/HeliostatField/Heliostats/") != std::string::npos)
+        if (path.find("/Heliostats/") != std::string::npos)
         {
-            std::string name = extractNameAfter(path, "/Heliostats/");
-            m_heliostatNames[id] = name;
-            m_allHeliostatNames.insert(name);
+            m_heliostatNames[id] = extractHeliostatName(path);
         }
         else if (path.find("/Receivers/") != std::string::npos)
         {
-            std::string name = extractNameAfter(path, "/Receivers/");
-            m_receiverNames[id] = name;
-            m_allReceiverNames.insert(name);
+            m_receiverNames[id] = extractReceiverName(path);
         }
     }
-}
-
-std::string SurfaceMap::extractNameAfter(const std::string& path, const std::string& keyword) const
-{
-    size_t start = path.find(keyword);
-    if (start == std::string::npos)
-        return {};
-
-    start += keyword.length();
-    size_t end = path.find('/', start);
-    if (end == std::string::npos)
-        end = path.length();
-
-    return path.substr(start, end - start);
 }
 
 bool SurfaceMap::isHeliostat(uint64_t surfaceId) const
@@ -54,21 +30,58 @@ bool SurfaceMap::isReceiver(uint64_t surfaceId) const
 std::string SurfaceMap::getHeliostatName(uint64_t surfaceId) const
 {
     auto it = m_heliostatNames.find(surfaceId);
-    return it != m_heliostatNames.end() ? it->second : "";
+    return (it != m_heliostatNames.end()) ? it->second : "UnknownHeliostat";
 }
 
 std::string SurfaceMap::getReceiverName(uint64_t surfaceId) const
 {
     auto it = m_receiverNames.find(surfaceId);
-    return it != m_receiverNames.end() ? it->second : "";
+    return (it != m_receiverNames.end()) ? it->second : "UnknownReceiver";
 }
 
-const std::unordered_set<std::string>& SurfaceMap::getAllHeliostatNames() const
+size_t SurfaceMap::getReceiverCount() const
 {
-    return m_allHeliostatNames;
+    return m_receiverNames.size();
 }
 
-const std::unordered_set<std::string>& SurfaceMap::getAllReceiverNames() const
+size_t SurfaceMap::getHeliostatCount() const
 {
-    return m_allReceiverNames;
+    return m_heliostatNames.size();
+}
+
+size_t SurfaceMap::getTotalSurfaceCount() const
+{
+    return m_surfacePaths.size();
+}
+
+std::vector<std::string> SurfaceMap::getReceiverNames() const
+{
+    std::vector<std::string> names;
+    for (const auto& [id, name] : m_receiverNames)
+        names.push_back(name);
+    return names;
+}
+
+std::string SurfaceMap::extractHeliostatName(const std::string& path) const
+{
+    std::istringstream stream(path);
+    std::string token;
+    while (std::getline(stream, token, '/'))
+    {
+        if (!token.empty() && token[0] == 'H')
+            return token;
+    }
+    return "UnknownHeliostat";
+}
+
+std::string SurfaceMap::extractReceiverName(const std::string& path) const
+{
+    std::istringstream stream(path);
+    std::string token;
+    while (std::getline(stream, token, '/'))
+    {
+        if (token.find("Receiver") != std::string::npos)
+            return token;
+    }
+    return "UnknownReceiver";
 }

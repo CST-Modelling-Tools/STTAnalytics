@@ -1,48 +1,63 @@
-#include "ParametersFileReader.h"
-#include "BinaryPhotonReader.h"
-#include "SurfaceMap.h"
-#include "EnergyAggregator.h"
 #include "PhotonProcessor.h"
+#include "ParametersFileReader.h"
 
 #include <iostream>
-#include <string>
-#include <filesystem>
+#include <iomanip>
+#include <locale>
+
+class CommaNumpunct : public std::numpunct<char> {
+protected:
+    char do_thousands_sep() const override { return ','; }
+    std::string do_grouping() const override { return "\3"; }
+};
 
 int main(int argc, char* argv[])
 {
-    if (argc != 2)
+    if (argc != 3)
     {
-        std::cerr << "Usage: STTAnalytics <path_to_simulation_folder>\n";
+        std::cerr << "Usage: STTAnalytics <photon_folder_path> <output_csv_file>\n";
         return 1;
     }
 
-    std::string folderPath = argv[1];
+    const std::string folderPath = argv[1];
+    const std::string outputCsvFile = argv[2];
+    const std::string surfaceFile = folderPath;
 
     try
     {
-        std::cout << "Reading parameters...\n";
-        ParametersFileReader paramReader(folderPath);
-        paramReader.read();
+        std::locale commaLocale(std::cout.getloc(), new CommaNumpunct);
+        std::cout.imbue(commaLocale);
 
-        double powerPerPhoton = paramReader.getPowerPerPhoton();
-        SurfaceMap surfaceMap(paramReader.getSurfaceMap());
-        EnergyAggregator aggregator(surfaceMap, powerPerPhoton);
-        PhotonProcessor processor(aggregator);
+        // Construct and read parameters
+        ParametersFileReader reader(surfaceFile);
+        reader.read();
+
+        // Get surface map and power per photon
+        const SurfaceMap& surfaceMap = reader.getSurfaceMap();
+        double powerPerPhoton = reader.getPowerPerPhoton();
+
+        std::cout << "Surface map contains " << surfaceMap.getHeliostatCount()
+                  << " heliostats and " << surfaceMap.getReceiverCount() << " receivers.\n";
+
+        std::cout << "Surface map contains "
+                  << surfaceMap.getHeliostatCount() + surfaceMap.getReceiverCount() 
+                  << " total surfaces (heliostats and receivers).\n";
+
+        std::cout << "Receivers detected:\n";
+        for (const auto& name : surfaceMap.getReceiverNames())
+            std::cout << "  - " << name << "\n";
 
         std::cout << "Streaming photon data...\n";
-        BinaryPhotonReader photonReader(folderPath);
-        photonReader.streamPhotons(processor);
 
-        std::cout << "Finished processing " << processor.getTotalCount() << " photons.\n";
+        // Process photons
+        PhotonProcessor processor(folderPath, surfaceMap);
+        processor.processPhotons(outputCsvFile);
 
-        std::string csvPath = (std::filesystem::path(folderPath) / "energy_report.csv").string();
-        aggregator.writeCSV(csvPath);
-
-        std::cout << "Results written to " << csvPath << "\n";
+        std::cout << "Finished.\n";
     }
     catch (const std::exception& ex)
     {
-        std::cerr << "Fatal error: " << ex.what() << '\n';
+        std::cerr << "Exception: " << ex.what() << '\n';
         return 1;
     }
 

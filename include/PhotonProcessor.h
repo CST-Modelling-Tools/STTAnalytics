@@ -2,30 +2,29 @@
 #define PHOTONPROCESSOR_H
 
 #include "Photon.h"
-#include "EnergyAggregator.h"
-#include <iostream>
-#include <cstdint>
+#include "SurfaceMap.h"
 
-struct PhotonProcessor
+#include <string>
+#include <map>
+#include <vector>
+#include <unordered_map>
+
+class PhotonProcessor
 {
-    EnergyAggregator& m_aggregator;
-    mutable uint64_t m_count = 0;
-    uint64_t m_reportEvery = 1'000'000;
+public:
+    PhotonProcessor(const std::string& folderPath, const SurfaceMap& surfaceMap);
 
-    explicit PhotonProcessor(EnergyAggregator& aggregator)
-        : m_aggregator(aggregator) {}
+    void processPhotons(const std::string& outputCsvFile);
 
-    void operator()(const Photon& photon) const
-    {
-        m_aggregator.processPhoton(photon);
-        ++m_count;
-        if (m_count % m_reportEvery == 0)
-        {
-            std::cout << "Processed " << m_count << " photons...\n";
-        }
-    }
+private:
+    std::string folderPath;
+    const SurfaceMap& surfaceMap;
+    uint64_t totalPhotons = 0;
 
-    uint64_t getTotalCount() const { return m_count; }
+    std::unordered_map<uint64_t, Photon> photonById;
+
+    double readBigEndianDouble(std::ifstream& stream) const;
+    std::vector<std::string> getSortedPhotonFiles() const;
 };
 
 #endif // PHOTONPROCESSOR_H

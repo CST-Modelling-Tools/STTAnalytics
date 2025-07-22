@@ -1,132 +1,88 @@
 #include "PhotonProcessor.h"
 #include "Photon.h"
 
-#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <regex>
-#include <stdexcept>
-#include <cstring>
+#include <set>
 #include <iomanip>
+#include <locale>
 
-namespace fs = std::filesystem;
-
-PhotonProcessor::PhotonProcessor(const std::string& folderPath, const SurfaceMap& surfaceMap)
-    : folderPath(folderPath), surfaceMap(surfaceMap), totalPhotons(0)
+PhotonProcessor::PhotonProcessor(const std::string& folderPath, const SurfaceMap& surfaceMap, double powerPerPhoton)
+    : folderPath(folderPath), surfaceMap(surfaceMap), powerPerPhoton(powerPerPhoton), totalPhotons(0)
 {}
 
 void PhotonProcessor::processPhotons(const std::string& outputCsvFile)
 {
-    std::map<std::pair<std::string, std::string>, double> energyByPair;
+    std::unordered_map<std::string, std::unordered_map<std::string, double>> powerMap;
+    std::set<std::string> receiverNamesSet;
 
-    std::vector<std::string> photonFiles = getSortedPhotonFiles();
-    Photon prevPhoton{};
+    TonatiuhReader reader(folderPath);
+    PhotonInfo info;
 
-    for (const auto& filePath : photonFiles)
+    while (reader.ReadPhotonInfo(info))
     {
-        std::ifstream file(filePath, std::ios::binary);
-        if (!file.is_open())
-            throw std::runtime_error("Could not open file: " + filePath);
+        Photon photon;
+        photon.id         = static_cast<uint64_t>(info.id);
+        photon.x          = static_cast<float>(info.x);
+        photon.y          = static_cast<float>(info.y);
+        photon.z          = static_cast<float>(info.z);
+        photon.side       = static_cast<uint32_t>(info.side);
+        photon.previousId = static_cast<uint64_t>(info.previous_id);
+        photon.nextId     = static_cast<uint64_t>(info.next_id);
+        photon.surfaceId  = static_cast<uint64_t>(info.surface_id);
 
-        while (file.peek() != EOF)
+        ++totalPhotons;
+        if (totalPhotons % 50000000 == 0)
         {
-            Photon photon;
-            photon.id         = static_cast<uint64_t>(readBigEndianDouble(file));
-            photon.x          = readBigEndianDouble(file);
-            photon.y          = readBigEndianDouble(file);
-            photon.z          = readBigEndianDouble(file);
-            photon.side       = static_cast<int>(readBigEndianDouble(file));
-            photon.previousId = static_cast<uint64_t>(readBigEndianDouble(file));
-            photon.nextId     = static_cast<uint64_t>(readBigEndianDouble(file));
-            photon.surfaceId  = static_cast<uint64_t>(readBigEndianDouble(file));
-
-            ++totalPhotons;
-            if (totalPhotons % 10000000 == 0)
-            {
-                std::cout.imbue(std::locale(""));
-                std::cout << "Processed " << totalPhotons << " photons..." << std::endl;
-            }
-
-            if (photon.nextId == 0 && surfaceMap.isReceiver(photon.surfaceId))
-            {
-                auto it = photonById.find(photon.previousId);
-                if (it != photonById.end())
-                {
-                    const Photon& prev = it->second;
-                    if (surfaceMap.isHeliostat(prev.surfaceId))
-                    {
-                        std::string receiverName = surfaceMap.getReceiverName(photon.surfaceId);
-                        std::string heliostatName = surfaceMap.getHeliostatName(prev.surfaceId);
-                        energyByPair[{receiverName, heliostatName}] += 1.0; // Each ray has unit energy
-                    }
-                }
-            }
-
-            photonById[photon.id] = photon;
+            std::cout.imbue(std::locale(""));
+            std::cout << "Processed " << totalPhotons << " photons..." << std::endl;
         }
+
+        if (photon.nextId == 0 && surfaceMap.isReceiver(photon.surfaceId))
+        {
+            if (photon.side != 1)
+                throw std::runtime_error("Photon reached a receiver but side != 1");
+
+            auto it = photonById.find(photon.previousId);
+            if (it == photonById.end())
+                continue;
+
+            const Photon& prev = it->second;
+            if (!surfaceMap.isHeliostat(prev.surfaceId))
+                continue;
+
+            std::string receiverName = surfaceMap.getReceiverName(photon.surfaceId);
+            std::string heliostatName = surfaceMap.getHeliostatName(prev.surfaceId);
+            powerMap[heliostatName][receiverName] += powerPerPhoton;
+            receiverNamesSet.insert(receiverName);
+        }
+
+        photonById[photon.id] = photon;
     }
 
+    std::vector<std::string> receiverNames(receiverNamesSet.begin(), receiverNamesSet.end());
+    std::sort(receiverNames.begin(), receiverNames.end());
+
     std::ofstream outFile(outputCsvFile);
-    outFile << "Receiver,Heliostat,Energy\n";
-    for (const auto& [pair, energy] : energyByPair)
+    outFile << "Heliostat";
+    for (const auto& receiver : receiverNames)
+        outFile << ",Power to " << receiver;
+    outFile << ",Total Power to Receivers\n";
+
+    for (const auto& [heliostat, receiverPowers] : powerMap)
     {
-        outFile << pair.first << "," << pair.second << "," << energy << "\n";
+        outFile << heliostat;
+        double totalPower = 0.0;
+        for (const auto& receiver : receiverNames)
+        {
+            double p = receiverPowers.count(receiver) ? receiverPowers.at(receiver) : 0.0;
+            totalPower += p;
+            outFile << "," << p;
+        }
+        outFile << "," << totalPower << "\n";
     }
 
     std::cout.imbue(std::locale(""));
     std::cout << "Finished streaming. Total photons: " << totalPhotons << std::endl;
     std::cout << "CSV file written to: " << outputCsvFile << std::endl;
-}
-
-double PhotonProcessor::readBigEndianDouble(std::ifstream& stream) const
-{
-    uint8_t buffer[8];
-    stream.read(reinterpret_cast<char*>(buffer), 8);
-
-    if (stream.gcount() != 8)
-        throw std::runtime_error("Unexpected end of file or read error while reading a double.");
-
-    uint64_t intVal = 0;
-    for (int i = 0; i < 8; ++i)
-    {
-        intVal = (intVal << 8) | buffer[i];
-    }
-
-    double result;
-    std::memcpy(&result, &intVal, sizeof(result));
-
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    uint8_t* bytes = reinterpret_cast<uint8_t*>(&result);
-    std::reverse(bytes, bytes + 8);
-#endif
-
-    return result;
-}
-
-std::vector<std::string> PhotonProcessor::getSortedPhotonFiles() const
-{
-    std::vector<std::pair<int, std::string>> indexedFiles;
-    std::regex pattern(R"(photons_(\d+)\.dat)");
-
-    for (const auto& entry : fs::directory_iterator(folderPath))
-    {
-        if (!entry.is_regular_file())
-            continue;
-
-        const std::string filename = entry.path().filename().string();
-        std::smatch match;
-        if (std::regex_match(filename, match, pattern))
-        {
-            int index = std::stoi(match[1]);
-            indexedFiles.emplace_back(index, entry.path().string());
-        }
-    }
-
-    std::sort(indexedFiles.begin(), indexedFiles.end());
-
-    std::vector<std::string> result;
-    for (const auto& [_, path] : indexedFiles)
-        result.push_back(path);
-
-    return result;
 }

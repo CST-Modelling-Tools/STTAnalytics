@@ -28,11 +28,10 @@ int main(int argc, char* argv[])
         std::locale commaLocale(std::cout.getloc(), new CommaNumpunct);
         std::cout.imbue(commaLocale);
 
-        // Construct and read parameters
+        // Read parameters
         ParametersFileReader reader(surfaceFile);
         reader.read();
 
-        // Get surface map and power per photon
         const SurfaceMap& surfaceMap = reader.getSurfaceMap();
         double powerPerPhoton = reader.getPowerPerPhoton();
 
@@ -40,7 +39,7 @@ int main(int argc, char* argv[])
                   << " heliostats and " << surfaceMap.getReceiverCount() << " receivers.\n";
 
         std::cout << "Surface map contains "
-                  << surfaceMap.getHeliostatCount() + surfaceMap.getReceiverCount() 
+                  << surfaceMap.getHeliostatCount() + surfaceMap.getReceiverCount()
                   << " total surfaces (heliostats and receivers).\n";
 
         std::cout << "Receivers detected:\n";
@@ -49,8 +48,7 @@ int main(int argc, char* argv[])
 
         std::cout << "Streaming photon data...\n";
 
-        // Process photons
-        PhotonProcessor processor(folderPath, surfaceMap);
+        PhotonProcessor processor(folderPath, surfaceMap, powerPerPhoton);
         processor.processPhotons(outputCsvFile);
 
         std::cout << "Finished.\n";

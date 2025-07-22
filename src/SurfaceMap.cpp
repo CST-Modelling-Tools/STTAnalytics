@@ -78,10 +78,13 @@ std::string SurfaceMap::extractReceiverName(const std::string& path) const
 {
     std::istringstream stream(path);
     std::string token;
+    std::string lastMatch = "UnknownReceiver";
+
     while (std::getline(stream, token, '/'))
     {
         if (token.find("Receiver") != std::string::npos)
-            return token;
+            lastMatch = token;
     }
-    return "UnknownReceiver";
+
+    return lastMatch;
 }

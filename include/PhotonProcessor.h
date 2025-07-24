@@ -7,7 +7,6 @@
 
 #include <string>
 #include <map>
-#include <vector>
 #include <unordered_map>
 
 class PhotonProcessor
@@ -21,8 +20,6 @@ private:
     const SurfaceMap& surfaceMap;
     double powerPerPhoton;
     uint64_t totalPhotons = 0;
-
-    std::unordered_map<uint64_t, Photon> photonById;
 };
 
 #endif // PHOTONPROCESSOR_H

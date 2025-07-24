@@ -2,14 +2,7 @@
 #include "ParametersFileReader.h"
 
 #include <iostream>
-#include <iomanip>
-#include <locale>
-
-class CommaNumpunct : public std::numpunct<char> {
-protected:
-    char do_thousands_sep() const override { return ','; }
-    std::string do_grouping() const override { return "\3"; }
-};
+#include <string>
 
 int main(int argc, char* argv[])
 {
@@ -25,14 +18,19 @@ int main(int argc, char* argv[])
 
     try
     {
-        std::locale commaLocale(std::cout.getloc(), new CommaNumpunct);
-        std::cout.imbue(commaLocale);
-
-        // Read parameters
+        // Construct and read parameters
         ParametersFileReader reader(surfaceFile);
         reader.read();
 
-        const SurfaceMap& surfaceMap = reader.getSurfaceMap();
+        // Get surface map and power per photon
+        SurfaceMap surfaceMap(reader.getSurfaceMap());
+
+        const auto& receiverMap = surfaceMap.getReceiverNamesMap();
+        for (const auto& [id, name] : receiverMap)
+        {
+            std::cout << "Receiver ID: " << id << ", Name: " << name << "\n";
+        }
+
         double powerPerPhoton = reader.getPowerPerPhoton();
 
         std::cout << "Surface map contains " << surfaceMap.getHeliostatCount()
@@ -42,12 +40,21 @@ int main(int argc, char* argv[])
                   << surfaceMap.getHeliostatCount() + surfaceMap.getReceiverCount()
                   << " total surfaces (heliostats and receivers).\n";
 
+        std::cout << "Known Heliostat Surface IDs:\n";
+        for (const auto& [id, name] : surfaceMap.getHeliostatNames())
+            std::cout << "  - ID: " << id << " -> " << name << "\n";
+
+        std::cout << "Known Receiver Surface IDs:\n";
+        for (const auto& [id, name] : surfaceMap.getReceiverNamesMap())
+            std::cout << "  - ID: " << id << " -> " << name << "\n";
+
         std::cout << "Receivers detected:\n";
         for (const auto& name : surfaceMap.getReceiverNames())
             std::cout << "  - " << name << "\n";
 
         std::cout << "Streaming photon data...\n";
 
+        // Process photons
         PhotonProcessor processor(folderPath, surfaceMap, powerPerPhoton);
         processor.processPhotons(outputCsvFile);
 

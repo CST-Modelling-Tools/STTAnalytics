@@ -23,6 +23,10 @@ public:
 
     std::vector<std::string> getReceiverNames() const;
 
+    // 🔍 Add these two
+    const std::unordered_map<uint64_t, std::string>& getHeliostatNames() const;
+    const std::unordered_map<uint64_t, std::string>& getReceiverNamesMap() const;
+
 private:
     std::unordered_map<uint64_t, std::string> m_surfacePaths;
     std::unordered_map<uint64_t, std::string> m_heliostatNames;

@@ -30,10 +30,9 @@ void ParametersFileReader::read()
         else if (line == "START SURFACES")
         {
             parseSurfaceBlock(file);
-        }
-        else if (line.rfind("END SURFACES", 0) == 0)
-        {
-            if (!(file >> m_powerPerPhoton))
+
+            std::string powerLine;
+            if (!std::getline(file, powerLine) || !(std::istringstream(powerLine) >> m_powerPerPhoton))
                 throw std::runtime_error("Failed to read power per photon.");
             break;
         }

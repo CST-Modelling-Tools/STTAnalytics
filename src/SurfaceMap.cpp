@@ -1,5 +1,6 @@
 #include "SurfaceMap.h"
 #include <sstream>
+#include <iostream>
 
 SurfaceMap::SurfaceMap(const std::unordered_map<uint64_t, std::string>& surfaceData)
     : m_surfacePaths(surfaceData)
@@ -14,7 +15,16 @@ SurfaceMap::SurfaceMap(const std::unordered_map<uint64_t, std::string>& surfaceD
         {
             m_receiverNames[id] = extractReceiverName(path);
         }
-    }
+
+     }
+
+//    std::cout << "Registered Receivers:\n";
+//    for (const auto& pair : m_receiverNames)
+//        std::cout << "  ID " << pair.first << ": " << pair.second << "\n";
+
+//    std::cout << "Registered Heliostats:\n";
+//    for (const auto& pair : m_heliostatNames)
+//        std::cout << "  ID " << pair.first << ": " << pair.second << "\n";
 }
 
 bool SurfaceMap::isHeliostat(uint64_t surfaceId) const
@@ -64,14 +74,14 @@ std::vector<std::string> SurfaceMap::getReceiverNames() const
 
 std::string SurfaceMap::extractHeliostatName(const std::string& path) const
 {
-    std::istringstream stream(path);
-    std::string token;
-    while (std::getline(stream, token, '/'))
+    std::stringstream ss(path);
+    std::string segment;
+    while (std::getline(ss, segment, '/'))
     {
-        if (!token.empty() && token[0] == 'H')
-            return token;
+        if (segment.size() >= 2 && segment[0] == 'H' && std::isdigit(segment[1]))
+            return segment;
     }
-    return "UnknownHeliostat";
+    return "";  // not a heliostat
 }
 
 std::string SurfaceMap::extractReceiverName(const std::string& path) const
@@ -87,4 +97,14 @@ std::string SurfaceMap::extractReceiverName(const std::string& path) const
     }
 
     return lastMatch;
+}
+
+const std::unordered_map<uint64_t, std::string>& SurfaceMap::getHeliostatNames() const
+{
+    return m_heliostatNames;
+}
+
+const std::unordered_map<uint64_t, std::string>& SurfaceMap::getReceiverNamesMap() const
+{
+    return m_receiverNames;
 }

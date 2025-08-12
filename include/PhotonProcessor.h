@@ -5,6 +5,7 @@
 #include "SurfaceMap.h"
 #include "tonatiuhreader.h"
 
+#include <cstdint>
 #include <string>
 #include <map>
 #include <unordered_map>

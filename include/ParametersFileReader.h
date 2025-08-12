@@ -1,9 +1,11 @@
 #ifndef PARAMETERSFILEREADER_H
 #define PARAMETERSFILEREADER_H
 
+#include <cstdint>
+#include <vector>
 #include <string>
 #include <unordered_map>
-#include <cstdint>
+
 
 class ParametersFileReader
 {

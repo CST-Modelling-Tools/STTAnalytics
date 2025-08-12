@@ -3,9 +3,11 @@
 #include <iostream>
 #include <filesystem>
 #include <vector>
+#include <map>
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <regex> 
 
 namespace fs = std::filesystem;
 
@@ -22,6 +24,48 @@ static double readBigEndianDouble(std::ifstream& file)
     return result;
 }
 
+// Anonymous namespace for private helper
+namespace
+{
+    std::vector<std::string> listPhotonFilesInNumericOrder(const std::string& folderPath)
+    {
+        static const std::regex pattern(R"(photons_(\d+)\.dat$)", std::regex::icase);
+
+        struct Entry { int index; fs::path path; };
+        std::vector<Entry> entries;
+
+        const fs::path dir(folderPath);
+        if (!fs::exists(dir) || !fs::is_directory(dir)) {
+            std::cerr << "Photon directory does not exist or is not a directory: " << folderPath << "\n";
+            return {};
+        }
+
+        for (const auto& de : fs::directory_iterator(dir)) {
+            if (!de.is_regular_file()) continue;
+            const std::string fname = de.path().filename().string();
+
+            std::smatch m;
+            if (std::regex_match(fname, m, pattern)) {
+                int idx = 0;
+                try {
+                    idx = std::stoi(m[1].str());
+                } catch (...) {
+                    continue; // skip unexpected cases
+                }
+                entries.push_back({ idx, de.path() });
+            }
+        }
+
+        std::sort(entries.begin(), entries.end(),
+                  [](const Entry& a, const Entry& b){ return a.index < b.index; });
+
+        std::vector<std::string> ordered;
+        ordered.reserve(entries.size());
+        for (auto& e : entries) ordered.push_back(e.path.string());
+        return ordered;
+    }
+}
+
 PhotonProcessor::PhotonProcessor(const std::string& folderPath_, const SurfaceMap& surfaceMap_, double powerPerPhoton_)
     : folderPath(folderPath_), surfaceMap(surfaceMap_), powerPerPhoton(powerPerPhoton_)
 {
@@ -29,19 +73,8 @@ PhotonProcessor::PhotonProcessor(const std::string& folderPath_, const SurfaceMa
 
 void PhotonProcessor::processPhotons(const std::string& outputCsvFile)
 {
-    std::vector<std::string> photonFiles;
-    for (const auto& entry : fs::directory_iterator(folderPath)) {
-        if (entry.is_regular_file()) {
-            std::string name = entry.path().filename().string();
-            if (name.rfind("photons_", 0) == 0 &&
-                name.size() >= 4 && name.compare(name.size() - 4, 4, ".dat") == 0)
-            {
-                photonFiles.push_back(entry.path().string());
-            }
-        }
-    }
-
-    std::sort(photonFiles.begin(), photonFiles.end());
+    // REPLACED: build list using numeric order instead of lexicographic sort
+    std::vector<std::string> photonFiles = listPhotonFilesInNumericOrder(folderPath);
 
     std::map<std::string, std::map<std::string, double>> energyMap;
 

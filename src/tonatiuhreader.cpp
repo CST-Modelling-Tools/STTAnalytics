@@ -1,13 +1,16 @@
 #include "tonatiuhreader.h"
+#include <algorithm>
+#include <iterator> 
 #include "comparefilename.h"
 #include <iostream>
+namespace fs = std::filesystem; 
 
 TonatiuhReader::TonatiuhReader(fs::path directory_path)
     : m_directory_path {directory_path}, m_file_number {0}, m_first_photon {true}
 {
     for(auto& p: fs::directory_iterator(directory_path))
         if(p.is_regular_file() && p.path().extension() == ".dat") m_directory_entry.push_back(p);
-    std::sort(std::begin(m_directory_entry), std::end(m_directory_entry), CompareFilename::CompareFilename());
+    std::sort(m_directory_entry.begin(), m_directory_entry.end(), CompareFilename{});
 
     m_buf = new char[1024 * 700];
 }

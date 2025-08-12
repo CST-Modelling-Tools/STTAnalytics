@@ -1,6 +1,7 @@
 #ifndef SURFACE_MAP_H
 #define SURFACE_MAP_H
 
+#include <cstdint>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>

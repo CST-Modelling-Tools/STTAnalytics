@@ -1,6 +1,10 @@
 #include "SurfaceMap.h"
+
+#include <algorithm>
+#include <cctype>
 #include <sstream>
-#include <iostream>
+#include <string>
+#include <vector>
 
 SurfaceMap::SurfaceMap(const std::unordered_map<uint64_t, std::string>& surfaceData)
     : m_surfacePaths(surfaceData)
@@ -15,16 +19,7 @@ SurfaceMap::SurfaceMap(const std::unordered_map<uint64_t, std::string>& surfaceD
         {
             m_receiverNames[id] = extractReceiverName(path);
         }
-
-     }
-
-//    std::cout << "Registered Receivers:\n";
-//    for (const auto& pair : m_receiverNames)
-//        std::cout << "  ID " << pair.first << ": " << pair.second << "\n";
-
-//    std::cout << "Registered Heliostats:\n";
-//    for (const auto& pair : m_heliostatNames)
-//        std::cout << "  ID " << pair.first << ": " << pair.second << "\n";
+    }
 }
 
 bool SurfaceMap::isHeliostat(uint64_t surfaceId) const
@@ -49,54 +44,100 @@ std::string SurfaceMap::getReceiverName(uint64_t surfaceId) const
     return (it != m_receiverNames.end()) ? it->second : "UnknownReceiver";
 }
 
-size_t SurfaceMap::getReceiverCount() const
+std::size_t SurfaceMap::getReceiverCount() const
 {
     return m_receiverNames.size();
 }
 
-size_t SurfaceMap::getHeliostatCount() const
+std::size_t SurfaceMap::getHeliostatCount() const
 {
     return m_heliostatNames.size();
 }
 
-size_t SurfaceMap::getTotalSurfaceCount() const
+std::size_t SurfaceMap::getTotalSurfaceCount() const
 {
     return m_surfacePaths.size();
 }
 
+// Deterministic: names sorted by ascending receiver ID
 std::vector<std::string> SurfaceMap::getReceiverNames() const
 {
+    std::vector<std::pair<uint64_t, std::string>> items;
+    items.reserve(m_receiverNames.size());
+    for (const auto& kv : m_receiverNames) items.emplace_back(kv.first, kv.second);
+
+    std::sort(items.begin(), items.end(),
+              [](const auto& a, const auto& b){ return a.first < b.first; });
+
     std::vector<std::string> names;
-    for (const auto& [id, name] : m_receiverNames)
-        names.push_back(name);
+    names.reserve(items.size());
+    for (const auto& kv : items) names.push_back(kv.second);
     return names;
 }
 
+// --- Helpers ---
+
+// Extracts a heliostat label, preferring the segment immediately after "Heliostats".
 std::string SurfaceMap::extractHeliostatName(const std::string& path) const
 {
-    std::stringstream ss(path);
-    std::string segment;
-    while (std::getline(ss, segment, '/'))
+    // Tokenize by '/'
+    std::vector<std::string> segs;
     {
-        if (segment.size() >= 2 && segment[0] == 'H' && std::isdigit(segment[1]))
-            return segment;
+        std::istringstream ss(path);
+        std::string seg;
+        while (std::getline(ss, seg, '/')) {
+            if (!seg.empty()) segs.push_back(seg);
+        }
     }
-    return "";  // not a heliostat
+
+    // Find "Heliostats" segment and take the next segment if available
+    for (std::size_t i = 0; i + 1 < segs.size(); ++i) {
+        if (segs[i] == "Heliostats") {
+            // e.g., "H012", "H101", etc.
+            return segs[i + 1];
+        }
+    }
+
+    // Fallback: last segment that looks like H\d+
+    for (auto it = segs.rbegin(); it != segs.rend(); ++it) {
+        const std::string& s = *it;
+        if (!s.empty() && s[0] == 'H' && (s.size() >= 2) && std::isdigit(static_cast<unsigned char>(s[1]))) {
+            return s;
+        }
+    }
+
+    return "UnknownHeliostat";
 }
 
+// Extracts a receiver label, preferring the segment immediately after "Receivers".
 std::string SurfaceMap::extractReceiverName(const std::string& path) const
 {
-    std::istringstream stream(path);
-    std::string token;
-    std::string lastMatch = "UnknownReceiver";
-
-    while (std::getline(stream, token, '/'))
+    // Tokenize by '/'
+    std::vector<std::string> segs;
     {
-        if (token.find("Receiver") != std::string::npos)
-            lastMatch = token;
+        std::istringstream ss(path);
+        std::string seg;
+        while (std::getline(ss, seg, '/')) {
+            if (!seg.empty()) segs.push_back(seg);
+        }
     }
 
-    return lastMatch;
+    // Prefer the segment after "Receivers"
+    for (std::size_t i = 0; i + 1 < segs.size(); ++i) {
+        if (segs[i] == "Receivers") {
+            return segs[i + 1];
+        }
+    }
+
+    // Fallback: last segment containing "Receiver"
+    for (auto it = segs.rbegin(); it != segs.rend(); ++it) {
+        const std::string& s = *it;
+        if (s.find("Receiver") != std::string::npos) {
+            return s;
+        }
+    }
+
+    return "UnknownReceiver";
 }
 
 const std::unordered_map<uint64_t, std::string>& SurfaceMap::getHeliostatNames() const

@@ -3,38 +3,43 @@
 
 #include <cstdint>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <string>
 
 class SurfaceMap
 {
 public:
-    SurfaceMap(const std::unordered_map<uint64_t, std::string>& surfaceData);
+    // surfaceData: maps surfaceId -> full path (e.g., ".../Heliostats/H012/Facet_3" or ".../Receivers/ReceiverA/...")
+    explicit SurfaceMap(const std::unordered_map<uint64_t, std::string>& surfaceData);
 
     bool isHeliostat(uint64_t surfaceId) const;
-    bool isReceiver(uint64_t surfaceId) const;
+    bool isReceiver (uint64_t surfaceId) const;
 
-    std::string getReceiverName(uint64_t surfaceId) const;
+    std::string getReceiverName (uint64_t surfaceId) const;
     std::string getHeliostatName(uint64_t surfaceId) const;
 
-    size_t getReceiverCount() const;
-    size_t getHeliostatCount() const;
-    size_t getTotalSurfaceCount() const;
+    std::size_t getReceiverCount()  const;
+    std::size_t getHeliostatCount() const;
+    std::size_t getTotalSurfaceCount() const;
 
+    // Deterministic order: names sorted by ascending receiver ID
     std::vector<std::string> getReceiverNames() const;
 
-    // 🔍 Add these two
+    // Additional accessors (unchanged signature)
     const std::unordered_map<uint64_t, std::string>& getHeliostatNames() const;
     const std::unordered_map<uint64_t, std::string>& getReceiverNamesMap() const;
 
 private:
+    // Raw input (only used for accounting)
     std::unordered_map<uint64_t, std::string> m_surfacePaths;
-    std::unordered_map<uint64_t, std::string> m_heliostatNames;
-    std::unordered_map<uint64_t, std::string> m_receiverNames;
 
+    // Classified name maps
+    std::unordered_map<uint64_t, std::string> m_heliostatNames; // facet/heliostat surfaceId -> "Hxxx..."
+    std::unordered_map<uint64_t, std::string> m_receiverNames;  // receiver surfaceId       -> "Receiver..."
+
+    // Helpers
     std::string extractHeliostatName(const std::string& path) const;
-    std::string extractReceiverName(const std::string& path) const;
+    std::string extractReceiverName (const std::string& path) const;
 };
 
 #endif // SURFACE_MAP_H

@@ -1,155 +1,123 @@
 #include "PhotonProcessor.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
-#include <filesystem>
-#include <vector>
+#include <limits>
 #include <map>
-#include <algorithm>
-#include <cstdint>
-#include <cstring>
-#include <regex> 
+#include <string>
+#include <vector>
 
-namespace fs = std::filesystem;
-
-static double readBigEndianDouble(std::ifstream& file)
-{
-    char buffer[8];
-    file.read(buffer, 8);
-    uint64_t temp = 0;
-    for (int i = 0; i < 8; ++i)
-        temp = (temp << 8) | static_cast<unsigned char>(buffer[i]);
-
-    double result;
-    std::memcpy(&result, &temp, sizeof(double));
-    return result;
-}
-
-// Anonymous namespace for private helper
-namespace
-{
-    std::vector<std::string> listPhotonFilesInNumericOrder(const std::string& folderPath)
-    {
-        static const std::regex pattern(R"(photons_(\d+)\.dat$)", std::regex::icase);
-
-        struct Entry { int index; fs::path path; };
-        std::vector<Entry> entries;
-
-        const fs::path dir(folderPath);
-        if (!fs::exists(dir) || !fs::is_directory(dir)) {
-            std::cerr << "Photon directory does not exist or is not a directory: " << folderPath << "\n";
-            return {};
-        }
-
-        for (const auto& de : fs::directory_iterator(dir)) {
-            if (!de.is_regular_file()) continue;
-            const std::string fname = de.path().filename().string();
-
-            std::smatch m;
-            if (std::regex_match(fname, m, pattern)) {
-                int idx = 0;
-                try {
-                    idx = std::stoi(m[1].str());
-                } catch (...) {
-                    continue; // skip unexpected cases
-                }
-                entries.push_back({ idx, de.path() });
-            }
-        }
-
-        std::sort(entries.begin(), entries.end(),
-                  [](const Entry& a, const Entry& b){ return a.index < b.index; });
-
-        std::vector<std::string> ordered;
-        ordered.reserve(entries.size());
-        for (auto& e : entries) ordered.push_back(e.path.string());
-        return ordered;
-    }
-}
-
-PhotonProcessor::PhotonProcessor(const std::string& folderPath_, const SurfaceMap& surfaceMap_, double powerPerPhoton_)
+PhotonProcessor::PhotonProcessor(const std::string& folderPath_,
+                                 const SurfaceMap& surfaceMap_,
+                                 double powerPerPhoton_)
     : folderPath(folderPath_), surfaceMap(surfaceMap_), powerPerPhoton(powerPerPhoton_)
 {
 }
 
 void PhotonProcessor::processPhotons(const std::string& outputCsvFile)
 {
-    // REPLACED: build list using numeric order instead of lexicographic sort
-    std::vector<std::string> photonFiles = listPhotonFilesInNumericOrder(folderPath);
+    // Stream photons using TonatiuhReader (handles file ordering, buffering, and endianness)
+    TonatiuhReader reader(folderPath);
 
+    // Accumulator: HeliostatName -> (ReceiverName -> Power)
     std::map<std::string, std::map<std::string, double>> energyMap;
 
-    uint64_t photonCounter = 0;
-    uint64_t skipped = 0;
-    uint64_t rayCounter = 0;
-    std::vector<Photon> ray;
+    std::uint64_t rayCounter    = 0;
+    std::uint64_t countedRays   = 0;
+    std::uint64_t skippedRays   = 0;
 
-    for (const std::string& fileName : photonFiles)
+    std::vector<PhotonInfo> ray;
+    ray.reserve(32);
+
+    PhotonInfo p{};
+    while (reader.ReadPhotonInfo(p))
     {
-        std::cout << fileName << "\n";
-        std::ifstream file(fileName, std::ios::binary);
-        if (!file) {
-            std::cerr << "Error opening file: " << fileName << "\n";
-            continue;
-        }
+        ++totalPhotons;
+        ray.push_back(p);
 
-        while (file.peek() != EOF)
+        // A ray ends when the current photon has next_id == 0
+        if (p.next_id == 0)
         {
-            Photon photon;
-            photon.id         = readBigEndianDouble(file);
-            photon.x          = readBigEndianDouble(file);
-            photon.y          = readBigEndianDouble(file);
-            photon.z          = readBigEndianDouble(file);
-            photon.side       = readBigEndianDouble(file);
-            photon.previousId = readBigEndianDouble(file);
-            photon.nextId     = readBigEndianDouble(file);
-            photon.surfaceId  = readBigEndianDouble(file);
+            ++rayCounter;
 
-            ++photonCounter;
-            ray.push_back(photon);
-
-            if (photon.nextId == 0)
+            if (ray.size() >= 2)
             {
-                ++rayCounter;
-                if (ray.size() >= 2)
+                const PhotonInfo& pen  = ray[ray.size() - 2]; // penultimate
+                const PhotonInfo& last = ray.back();          // receiver hit
+
+                const std::uint64_t heliostatID = pen.surface_id;
+                const std::uint64_t receiverID  = last.surface_id;
+                const int arrivalSide = last.side;            // check arrival at receiver
+
+                if (arrivalSide == 1 &&
+                    surfaceMap.isHeliostat(heliostatID) &&
+                    surfaceMap.isReceiver(receiverID))
                 {
-                    const Photon& penultimate = ray[ray.size() - 2];
-                    const Photon& last = ray.back();
-
-                    auto heliostatID = static_cast<uint64_t>(penultimate.surfaceId);
-                    auto receiverID  = static_cast<uint64_t>(last.surfaceId);
-                    auto sideFlag    = static_cast<uint32_t>(penultimate.side);
-
-                    if (sideFlag == 1 &&
-                        surfaceMap.isHeliostat(heliostatID) &&
-                        surfaceMap.isReceiver(receiverID))
-                    {
-                        std::string heliostatName = surfaceMap.getHeliostatName(heliostatID);
-                        std::string receiverName  = surfaceMap.getReceiverName(receiverID);
-                        energyMap[heliostatName][receiverName] += powerPerPhoton;
-                    }
-                    else
-                    {
-                        ++skipped;
-                    }
+                    const std::string heliostatName = surfaceMap.getHeliostatName(heliostatID);
+                    const std::string receiverName  = surfaceMap.getReceiverName(receiverID);
+                    energyMap[heliostatName][receiverName] += powerPerPhoton;
+                    ++countedRays;
                 }
-                ray.clear();
-
-                if (rayCounter % 1000000 == 0)
-                    std::cout << "Processed " << rayCounter << " rays...\n";
+                else
+                {
+                    ++skippedRays;
+                }
             }
+
+            ray.clear();
+
+            if (rayCounter % 1000000 == 0)
+                std::cout << "Processed " << rayCounter << " rays...\n";
         }
     }
 
-    std::cout << "Finished streaming. Total photons: " << photonCounter << "\n";
-    std::cout << "  - Skipped photons with invalid segments: " << skipped << "\n";
+    std::cout << "Finished streaming.\n";
+    std::cout << "  - Total photons read: " << totalPhotons << "\n";
+    std::cout << "  - Rays processed: " << rayCounter << "\n";
+    std::cout << "  - Counted heliostat→receiver rays (side==1): " << countedRays << "\n";
+    std::cout << "  - Skipped rays: " << skippedRays << "\n";
 
+    // -----------------------
+    // Build receiver list sorted by numeric suffix (Receiver1, Receiver2, ...)
+    // -----------------------
+    const auto& receiverNameMap = surfaceMap.getReceiverNamesMap(); // id -> name
+    std::vector<std::string> receivers;
+    receivers.reserve(receiverNameMap.size());
+    for (const auto& kv : receiverNameMap) receivers.push_back(kv.second);
+
+    auto trailingNumber = [](const std::string& s) -> long long {
+        if (s.empty()) return -1;
+        std::size_t i = s.size(), end = i;
+        while (i > 0 && std::isdigit(static_cast<unsigned char>(s[i - 1]))) --i;
+        if (i < end) {
+            try { return std::stoll(s.substr(i, end - i)); }
+            catch (...) { return -1; }
+        }
+        return -1;
+    };
+
+    std::sort(receivers.begin(), receivers.end(),
+              [&](const std::string& a, const std::string& b){
+                  long long na = trailingNumber(a);
+                  long long nb = trailingNumber(b);
+                  if (na >= 0 && nb >= 0) return na < nb;  // numeric first, increasing
+                  if (na >= 0) return true;                // numeric before non-numeric
+                  if (nb >= 0) return false;
+                  return a < b;                            // both non-numeric: lexicographic
+              });
+
+    // -----------------------
+    // Write CSV
+    // -----------------------
     std::ofstream out(outputCsvFile);
     if (!out) {
-        std::cerr << "Error writing CSV file.\n";
+        std::cerr << "Error writing CSV file: " << outputCsvFile << "\n";
         return;
     }
 
-    const std::vector<std::string> receivers = surfaceMap.getReceiverNames();
     out << "Heliostat Label";
     for (const std::string& rec : receivers)
         out << ", Power to " << rec;
@@ -162,12 +130,15 @@ void PhotonProcessor::processPhotons(const std::string& outputCsvFile)
 
         out << heliostat;
         double total = 0.0;
+
         for (const std::string& rec : receivers)
         {
-            double value = recMap.count(rec) ? recMap.at(rec) : 0.0;
+            const auto it = recMap.find(rec);
+            const double value = (it != recMap.end()) ? it->second : 0.0;
             out << ", " << value;
             total += value;
         }
+
         out << ", " << total << "\n";
     }
 

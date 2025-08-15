@@ -5,7 +5,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
-
+#include <fstream>  // needed for std::ifstream in declarations
 
 class ParametersFileReader
 {
@@ -24,8 +24,13 @@ private:
 
     void parseParameterBlock(std::ifstream& file);
     void parseSurfaceBlock(std::ifstream& file);
+    void parsePowerAfterSurfaces(std::ifstream& file);
 
     static bool matchesExpectedParameterList(const std::vector<std::string>& actual);
+
+    // helpers
+    static std::string trim(const std::string& s);
+    static std::string normalizeId(const std::string& s); // for parameter-name comparison
 };
 
 #endif // PARAMETERSFILEREADER_H
